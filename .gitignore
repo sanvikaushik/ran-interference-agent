@@ -1,0 +1,52 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual envs
+venv/
+env/
+.venv/
+
+# Jupyter / IPython
+.ipynb_checkpoints/
+*.ipynb
+
+# Bytecode
+*.pyc
+
+# --- Build / Dist ---
+build/
+dist/
+*.egg-info/
+*.egg
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Streamlit runtime ---
+.streamlit/
+**/.streamlit/
+
+# --- OS / Editor files ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --- Python tooling ---
+.mypy_cache/
+.pytest_cache/
+coverage/
+htmlcov/
+
+# --- Local config ---
+.env
+.env.*
+config.local.json
+
+# --- Misc ---
+*.sqlite3
