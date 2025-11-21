@@ -32,7 +32,7 @@ def _apply_dl_tilt(df: pd.DataFrame, delta_tilt_deg: float) -> pd.DataFrame:
     return improved
 
 
-def _apply_load_balance(df: pd.DataFrame) -> pd.DataFrame:
+def _apply_load_balance(df: pd.DataFrame, total_offload: float | None = None) -> pd.DataFrame:    
     """
     Simulate effect of SON / load balancing:
       - Reduce PRB utilization on this cell
@@ -45,6 +45,9 @@ def _apply_load_balance(df: pd.DataFrame) -> pd.DataFrame:
 
     prb_factor = 0.75   # 25% less load
     bler_factor = 0.9
+
+    if total_offload is not None and total_offload > 0:
+        prb_factor = max(0.4, 1 - total_offload / 100)
 
     improved.loc[tail_idx, "prb_util"] = improved.loc[tail_idx, "prb_util"] * prb_factor
     improved.loc[tail_idx, "bler"] = improved.loc[tail_idx, "bler"] * bler_factor
@@ -75,11 +78,15 @@ def apply_action_to_kpis(
         return mitigated, note
 
     if intent == "BALANCE_LOAD":
-        mitigated = _apply_load_balance(df)
+        plan = params.get("rebalancing_plan", [])
+        total_offload = sum(move[2] for move in plan) if plan else None
+        mitigated = _apply_load_balance(df, total_offload=total_offload)
         note = (
             "Applied load-balancing in the last 40% of samples, reducing PRB utilization "
             "and slightly improving BLER."
         )
+        if total_offload:
+            note += f" Offloaded approximately {total_offload:.1f} traffic units via optimizer."
         return mitigated, note
 
     # For NO_ACTION or intents we don't simulate yet, just return original

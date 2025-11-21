@@ -1,4 +1,3 @@
-# ui/dashboard.py
 import sys, os
 
 # Add project root to path
@@ -8,6 +7,7 @@ if PROJECT_ROOT not in sys.path:
 
 import pandas as pd
 import streamlit as st
+import textwrap
 
 from agent.kpi_simulator import KpiConfig, generate_kpi_series
 from agent.reasoner import InterferenceAgent
@@ -15,9 +15,25 @@ from agent.what_if_simulator import apply_action_to_kpis
 
 
 def main():
-    st.set_page_config(page_title="RAN Interference-Hunting Agent", layout="wide")
+    st.set_page_config(page_title="RAN Interference Algorithms Lab", layout="wide")
+    st.title("RAN Interference Algorithms Lab")
+    
+    st.caption(
+        "Dynamic Time Warping (DTW) signature detection + graph-based min-cost flow mitigation"
+    )
+    st.info(
+        "Start by choosing or adjusting a scenario, then generate KPIs and let the agent "
+        "diagnose the issue. Review the recommended mitigation before applying it to see "
+        "the projected impact."
+    )
 
-    st.title("RAN Interference-Hunting Agent – What-if Simulator")
+    with st.expander("How to use this dashboard", expanded=True):
+        st.markdown(
+            "1. Select a scenario and seed from the sidebar, then choose the number of timesteps.\n"
+            "2. Inspect the generated KPIs to understand the baseline behavior.\n"
+            "3. Review the agent's diagnosis summary and open the details tab for full context.\n"
+            "4. Apply the recommended mitigation to visualize the expected improvement."
+        )
 
     # Sidebar controls
     st.sidebar.header("Scenario configuration")
@@ -35,6 +51,43 @@ def main():
     agent = InterferenceAgent()
     out = agent.run_on_sequence(df)
 
+    core1, core2 = st.columns([1.5, 1.5])
+
+    with core1:
+        st.subheader("DTW Signature Engine")
+        st.caption("Multivariate DTW distances to learned signatures (lower is better)")
+        dist_df = pd.DataFrame(
+            [
+                {
+                    "class": label.replace("_", " "),
+                    "distance": value,
+                }
+                for label, value in out["dtw"].distances.items()
+            ]
+        ).sort_values("distance")
+        st.dataframe(dist_df, hide_index=True, use_container_width=True)
+        st.metric(
+            "Predicted class",
+            out["diagnosis"]["root_cause"],
+            f"confidence {out['diagnosis']['confidence']:.2f}",
+        )
+
+    with core2:
+        st.subheader("Graph Optimizer (Min-Cost Flow)")
+        st.caption("Optimal offload plan when congestion is detected")
+        if out["load_plan"]:
+            plan_df = pd.DataFrame(
+                out["load_plan"], columns=["from", "to", "amount"]
+            )
+            st.dataframe(plan_df, hide_index=True, use_container_width=True)
+            cost = out["action"].get("optimization_cost")
+            if cost is not None:
+                st.metric("Optimization cost", f"{cost:.2f}")
+        else:
+            st.info("No congestion detected → optimizer idle.")
+
+    st.markdown("---")
+
     col1, col2 = st.columns([2, 1])
 
     with col1:
@@ -43,14 +96,25 @@ def main():
         st.line_chart(df.set_index("time")[["sinr", "prb_util", "pusch_noise", "bler"]])
 
     with col2:
-        st.subheader("Agent Diagnosis")
+        st.subheader("Agent Diagnosis + Action")
         st.write(f"**Scenario:** `{scenario}`")
-        st.write(f"**Root cause:** `{out['diagnosis']['root_cause']}`")
-        st.write(f"**Confidence:** `{out['diagnosis']['confidence']:.2f}`")
-        st.write(f"**Action intent:** `{out['action']['intent']}`")
-        st.write(out["explanation"])
 
-    st.markdown("---")
+        root_cause = out["diagnosis"]["root_cause"]
+        truncated_root_cause = textwrap.shorten(root_cause, width=60, placeholder=" …")
+
+        summary_tab, details_tab = st.tabs(["Summary", "Details"])
+
+        with summary_tab:
+            c1, c2 = st.columns(2)
+            with c1:
+                st.metric("Root cause", truncated_root_cause)
+                st.metric("Confidence", f"{out['diagnosis']['confidence']:.2f}")
+            with c2:
+                st.metric("Action intent", out["action"]["intent"])
+
+        with details_tab:
+            st.markdown(f"**Full root cause:** `{root_cause}`")
+            st.markdown(out["explanation"])
 
     mitigated_df = None
     note = ""

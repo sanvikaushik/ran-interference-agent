@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Literal
 
-
 from .kpi_simulator import generate_dataset
 from .reasoner import InterferenceAgent
 from .ml_classifier import train_and_eval_split
@@ -14,7 +13,7 @@ def evaluate_on_synthetic(
     timesteps: int = 300,
 ) -> dict:
     """
-    Existing rule-based evaluation (unchanged).
+    Evaluate the agent on synthetic KPI sequences.
     """
     data = generate_dataset(n_per_scenario=n_per_scenario)
     agent = InterferenceAgent()

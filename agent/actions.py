@@ -15,11 +15,13 @@ class ActionPlan(TypedDict):
     intent: IntentType
     description: str
     parameters: dict
-
+    optimization_cost: float | None
 
 def propose_action(
     diagnosis: Diagnosis,
     cell_id: str = "Cell-1",
+    rebalancing_plan: list[tuple[str, str, float]] | None = None,
+    plan_cost: float | None = None,
 ) -> ActionPlan:
     cause: DiagnosisLabel = diagnosis["root_cause"]
 
@@ -35,6 +37,7 @@ def propose_action(
                 "delta_tilt_deg": -1.5,
                 "recheck_interval_s": 300,
             },
+            optimization_cost=None,
         )
 
     if cause == "congestion":
@@ -56,6 +59,7 @@ def propose_action(
             intent="NO_ACTION",
             description="KPIs are within expected ranges. No immediate RAN changes suggested.",
             parameters={"cell_id": cell_id},
+            optimization_cost=None,
         )
 
     # unknown
@@ -66,4 +70,5 @@ def propose_action(
             "offline analysis before applying configuration changes."
         ),
         parameters={"cell_id": cell_id},
+        optimization_cost=None,
     )

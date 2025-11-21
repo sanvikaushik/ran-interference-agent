@@ -29,17 +29,71 @@ class InterferenceAgent:
         if len(df) < self.cfg.lookback * 2:
             raise ValueError("Time-series too short for before/after comparison.")
 
-        diagnosis = diagnose_window(df, thresholds=None)
-        action = propose_action(diagnosis, cell_id=self.cfg.cell_id)
-        explanation = self._build_explanation(diagnosis, action)
+        window = df.tail(self.cfg.lookback)
+        signature = self.matcher.match(window)
+
+        # Keep rule-based stats for interpretability but use DTW label
+        stats = _window_stats(df, lookback=self.cfg.lookback)
+        diagnosis = Diagnosis(
+            root_cause=signature.label,  # type: ignore
+            confidence=signature.confidence,
+            features=stats,
+        )
+
+        load_plan, cost = self._maybe_plan_load_shift(diagnosis)
+        action = propose_action(
+            diagnosis,
+            cell_id=self.cfg.cell_id,
+            rebalancing_plan=load_plan,
+            plan_cost=cost,
+        )
+        explanation = self._build_explanation(diagnosis, action, signature, load_plan)
 
         return AgentOutput(
             diagnosis=diagnosis,
             action=action,
             explanation=explanation,
+            dtw=signature,
+            load_plan=load_plan,
         )
+    
+    def _maybe_plan_load_shift(self, diagnosis: Diagnosis) -> tuple[list[tuple[str, str, float]], float | None]:
+        if diagnosis["root_cause"] != "congestion":
+            return [], None
 
-    def _build_explanation(self, diagnosis: Diagnosis, action: ActionPlan) -> str:
+        prb_now = diagnosis["features"].get("prb_util_now", 70.0)
+        cell_loads = {
+            self.cfg.cell_id: prb_now,
+            "Cell-2": max(45.0, prb_now - 10),
+            "Cell-3": 55.0,
+            "Cell-4": 60.0,
+        }
+        capacities = {cid: 100.0 for cid in cell_loads}
+        neighbor_costs = {
+            (self.cfg.cell_id, "Cell-2"): 1.0,
+            (self.cfg.cell_id, "Cell-3"): 1.5,
+            (self.cfg.cell_id, "Cell-4"): 2.0,
+            ("Cell-2", self.cfg.cell_id): 1.2,
+            ("Cell-3", self.cfg.cell_id): 1.4,
+            ("Cell-2", "Cell-3"): 0.8,
+            ("Cell-3", "Cell-4"): 1.1,
+        }
+        plan, cost = plan_load_shift(
+            focal_cell=self.cfg.cell_id,
+            cell_loads=cell_loads,
+            capacities=capacities,
+            neighbor_costs=neighbor_costs,
+            target_utilization=70.0,
+        )
+        return plan, cost
+
+    def _build_explanation(
+        self,
+        diagnosis: Diagnosis,
+        action: ActionPlan,
+        signature: SignatureMatch,
+        load_plan: list[tuple[str, str, float]],
+    ) -> str:
         features = diagnosis["features"]
         cause = diagnosis["root_cause"]
         conf = diagnosis["confidence"]
@@ -62,6 +116,9 @@ class InterferenceAgent:
                 "Pattern shows very high PRB utilization with elevated BLER and some SINR degradation – "
                 "consistent with cell congestion."
             )
+            if load_plan:
+                moves = "; ".join([f"{a}->{b}: {amt:.1f}" for a, b, amt in load_plan])
+                base.append(f"Graph optimizer proposes shifts: {moves}.")
         elif cause == "normal":
             base.append(
                 "KPI levels look stable with no major degradation – traffic appears within normal bounds."
@@ -73,6 +130,12 @@ class InterferenceAgent:
 
         base.append(
             f"Suggested action intent: {action['intent']} – {action['description']}"
+        )
+
+        base.append(
+            f"DTW distances → normal: {signature.distances['normal']:.1f}, "
+            f"congestion: {signature.distances['congestion']:.1f}, "
+            f"external_interference: {signature.distances['external_interference']:.1f}."
         )
 
         return " ".join(base)
