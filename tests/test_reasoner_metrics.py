@@ -15,6 +15,13 @@ def test_agent_runs_end_to_end():
     assert "explanation" in out
     assert isinstance(out["explanation"], str)
     assert len(out["explanation"]) > 10
+    assert "dtw" in out
+    assert set(out["dtw"].distances.keys()) == {
+        "normal",
+        "external_interference",
+        "congestion",
+    }
+
 
 
 def test_metrics_reasonable_accuracy():

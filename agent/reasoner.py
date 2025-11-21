@@ -1,26 +1,37 @@
-from dataclasses import dataclass
 import pandas as pd
 from typing import TypedDict
 
-from .rulebase import diagnose_window, Diagnosis
+from .rulebase import _window_stats, diagnose_window, Diagnosis
 from .actions import propose_action, ActionPlan
-
+from .dtw_signature_engine import DTWSignatureEngine, SignatureMatch
+from .graph_optimizer import plan_load_shift
 
 class AgentOutput(TypedDict):
     diagnosis: Diagnosis
     action: ActionPlan
     explanation: str
+    dtw: SignatureMatch
+    load_plan: list[tuple[str, str, float]]
 
-
-@dataclass
 class AgentConfig:
     lookback: int = 60
     cell_id: str = "Cell-1"
 
+class AgentConfig:
+    def __init__(self, lookback: int = 60, cell_id: str = "Cell-1"):
+        self.lookback = lookback
+        self.cell_id = cell_id
 
 class InterferenceAgent:
-    def __init__(self, cfg: AgentConfig | None = None):
+    def __init__(
+        self,
+        cfg: AgentConfig | None = None,
+        matcher: DTWSignatureEngine | None = None,
+    ):
         self.cfg = cfg or AgentConfig()
+        self.matcher = matcher or DTWSignatureEngine.from_synthetic(
+            timesteps=self.cfg.lookback
+        )
 
     def run_on_sequence(self, df: pd.DataFrame) -> AgentOutput:
         """
