@@ -1,6 +1,6 @@
 from agent.dtw_signature_engine import DTWSignatureEngine
 from agent.kpi_simulator import KpiConfig, generate_kpi_series
-from agent.graph_optimizer import plan_load_shift
+from agent.graph_optimizer import plan_load_shift, optimize_load_shift
 
 
 def test_dtw_signature_engine_classifies_sequences():
@@ -38,3 +38,26 @@ def test_graph_optimizer_builds_plan_for_overload():
 
     assert any(move[0] == "Cell-1" for move in plan)
     assert cost >= 0
+
+
+def test_optimize_load_shift_reports_projection():
+    cell_loads = {"Cell-1": 90.0, "Cell-2": 50.0, "Cell-3": 45.0}
+    capacities = {cid: 100.0 for cid in cell_loads}
+    neighbor_costs = {
+        ("Cell-1", "Cell-2"): 1.0,
+        ("Cell-1", "Cell-3"): 1.5,
+    }
+
+    result = optimize_load_shift(
+        focal_cell="Cell-1",
+        cell_loads=cell_loads,
+        capacities=capacities,
+        neighbor_costs=neighbor_costs,
+        target_utilization=70.0,
+        max_transfer=20.0,
+    )
+
+    assert result.moves
+    assert result.total_cost >= 0
+    assert result.projected_loads["focal"] <= cell_loads["Cell-1"]
+    assert result.relieved_prb >= 0

@@ -18,9 +18,41 @@ class EdgeCost:
     dst: str
     cost: float
 
+@dataclass
+class LoadShiftPlan:
+    """Detailed result of the graph optimization step."""
+
+    moves: list[tuple[str, str, float]]
+    total_cost: float
+    projected_loads: Dict[str, float]
+    relieved_prb: float
+
+    @property
+    def relief_percent(self) -> float:
+        """Percentage relief for the focal cell relative to its pre-plan load."""
+        initial = self.relieved_prb + self.projected_loads.get("focal", 0)
+        if initial == 0:
+            return 0.0
+        return (self.relieved_prb / initial) * 100
+
 
 def _build_edges(neighbor_costs: Dict[Tuple[str, str], float]) -> List[EdgeCost]:
     return [EdgeCost(src=u, dst=v, cost=c) for (u, v), c in neighbor_costs.items()]
+
+def _project_loads(
+    cell_loads: Dict[str, float],
+    capacities: Dict[str, float],
+    plan: List[tuple[str, str, float]],
+) -> Dict[str, float]:
+    """Compute projected loads after applying a shift plan.
+
+    Loads are clamped to [0, capacity] for safety.
+    """
+    projected = dict(cell_loads)
+    for src, dst, amount in plan:
+        projected[src] = max(0.0, projected.get(src, 0.0) - amount)
+        projected[dst] = min(capacities.get(dst, projected.get(dst, 0.0)), projected.get(dst, 0.0) + amount)
+    return projected
 
 
 def plan_load_shift(
@@ -80,3 +112,30 @@ def plan_load_shift(
     # Keep plan focused on relieving the focal cell but retain spillover if needed
     filtered_plan = [p for p in plan if p[0] == focal_cell or p[1] == focal_cell]
     return filtered_plan or plan, total_cost
+
+def optimize_load_shift(
+    focal_cell: str,
+    cell_loads: Dict[str, float],
+    capacities: Dict[str, float],
+    neighbor_costs: Dict[Tuple[str, str], float],
+    target_utilization: float = 70.0,
+    max_transfer: float = 30.0,
+) -> LoadShiftPlan:
+    """Run the greedy planner and provide projected relief details."""
+    plan, cost = plan_load_shift(
+        focal_cell=focal_cell,
+        cell_loads=cell_loads,
+        capacities=capacities,
+        neighbor_costs=neighbor_costs,
+        target_utilization=target_utilization,
+        max_transfer=max_transfer,
+    )
+    projected = _project_loads(cell_loads, capacities, plan)
+    relieved = max(0.0, cell_loads.get(focal_cell, 0.0) - projected.get(focal_cell, cell_loads.get(focal_cell, 0.0)))
+    projected_with_marker = {"focal": projected.get(focal_cell, 0.0), **projected}
+    return LoadShiftPlan(
+        moves=plan,
+        total_cost=cost,
+        projected_loads=projected_with_marker,
+        relieved_prb=relieved,
+    )

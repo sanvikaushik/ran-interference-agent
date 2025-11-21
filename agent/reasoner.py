@@ -4,7 +4,7 @@ from typing import TypedDict
 from .rulebase import _window_stats, diagnose_window, Diagnosis
 from .actions import propose_action, ActionPlan
 from .dtw_signature_engine import DTWSignatureEngine, SignatureMatch
-from .graph_optimizer import plan_load_shift
+from .graph_optimizer import optimize_load_shift, LoadShiftPlan
 
 class AgentOutput(TypedDict):
     diagnosis: Diagnosis
@@ -51,14 +51,14 @@ class InterferenceAgent:
             features=stats,
         )
 
-        load_plan, cost = self._maybe_plan_load_shift(diagnosis)
+        load_plan, cost, projection = self._maybe_plan_load_shift(diagnosis)
         action = propose_action(
             diagnosis,
             cell_id=self.cfg.cell_id,
             rebalancing_plan=load_plan,
             plan_cost=cost,
         )
-        explanation = self._build_explanation(diagnosis, action, signature, load_plan)
+        explanation = self._build_explanation(diagnosis, action, signature, load_plan, projection)
 
         return AgentOutput(
             diagnosis=diagnosis,
@@ -68,9 +68,9 @@ class InterferenceAgent:
             load_plan=load_plan,
         )
     
-    def _maybe_plan_load_shift(self, diagnosis: Diagnosis) -> tuple[list[tuple[str, str, float]], float | None]:
+    def _maybe_plan_load_shift(self, diagnosis: Diagnosis) -> tuple[list[tuple[str, str, float]], float | None, LoadShiftPlan | None]:
         if diagnosis["root_cause"] != "congestion":
-            return [], None
+            return [], None, None
 
         prb_now = diagnosis["features"].get("prb_util_now", 70.0)
         cell_loads = {
@@ -89,14 +89,14 @@ class InterferenceAgent:
             ("Cell-2", "Cell-3"): 0.8,
             ("Cell-3", "Cell-4"): 1.1,
         }
-        plan, cost = plan_load_shift(
+        plan_result = optimize_load_shift(
             focal_cell=self.cfg.cell_id,
             cell_loads=cell_loads,
             capacities=capacities,
             neighbor_costs=neighbor_costs,
             target_utilization=70.0,
         )
-        return plan, cost
+        return plan_result.moves, plan_result.total_cost, plan_result
 
     def _build_explanation(
         self,
@@ -104,6 +104,7 @@ class InterferenceAgent:
         action: ActionPlan,
         signature: SignatureMatch,
         load_plan: list[tuple[str, str, float]],
+        projection: LoadShiftPlan | None,
     ) -> str:
         features = diagnosis["features"]
         cause = diagnosis["root_cause"]
@@ -130,6 +131,11 @@ class InterferenceAgent:
             if load_plan:
                 moves = "; ".join([f"{a}->{b}: {amt:.1f}" for a, b, amt in load_plan])
                 base.append(f"Graph optimizer proposes shifts: {moves}.")
+            if projection:
+                base.append(
+                    f"Projected PRB on focal cell after shift: {projection.projected_loads['focal']:.1f}% "
+                    f"(relief {projection.relieved_prb:.1f} p.p.)."
+                )
         elif cause == "normal":
             base.append(
                 "KPI levels look stable with no major degradation – traffic appears within normal bounds."

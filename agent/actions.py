@@ -51,7 +51,9 @@ def propose_action(
                 "cell_id": cell_id,
                 "max_prb_util_target": 70,
                 "offload_neighbors": ["Cell-2", "Cell-3"],
+                "proposed_plan": rebalancing_plan or [],
             },
+            optimization_cost=plan_cost,
         )
 
     if cause == "normal":
