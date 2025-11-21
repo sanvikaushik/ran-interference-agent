@@ -34,6 +34,23 @@ class LoadShiftPlan:
         if initial == 0:
             return 0.0
         return (self.relieved_prb / initial) * 100
+        
+@dataclass
+class LoadShiftPlan:
+    """Detailed result of the graph optimization step."""
+
+    moves: list[tuple[str, str, float]]
+    total_cost: float
+    projected_loads: Dict[str, float]
+    relieved_prb: float
+
+    @property
+    def relief_percent(self) -> float:
+        """Percentage relief for the focal cell relative to its pre-plan load."""
+        initial = self.relieved_prb + self.projected_loads.get("focal", 0)
+        if initial == 0:
+            return 0.0
+        return (self.relieved_prb / initial) * 100
 
 
 def _build_edges(neighbor_costs: Dict[Tuple[str, str], float]) -> List[EdgeCost]:
