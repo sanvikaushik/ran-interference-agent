@@ -1,6 +1,6 @@
  ran-interference-agent
 
-A small lab for simulating RAN interference scenarios, diagnosing them with a rule/DTW-based agent, and visualizing mitigations.
+A lab for simulating RAN interference scenarios, diagnosing them with a rule/DTW-based agent, and visualizing mitigations.
 
 ## Quickstart
 1. Install dependencies (use a virtualenv if you prefer):
